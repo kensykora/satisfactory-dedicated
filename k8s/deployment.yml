@@ -1,0 +1,121 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-storage
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: satisfactory-claim
+spec:
+  # storageClassName: manual
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 25Gi
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: satisfactory-volume
+  labels:
+    clustername: microk8s
+spec:
+  capacity:
+    storage: 25Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  # storageClassName: local-storage
+  local:
+    path: /usr/satisfactory
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: In
+            values:
+              - ubuntu
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: satisfactory-server
+  labels:
+    app: satisfactory-server
+spec:
+  strategy:
+    type: Recreate
+  replicas: 1
+  selector:
+    matchLabels:
+      app: satisfactory-server
+  template:
+    metadata:
+      labels:
+        app: satisfactory-server
+    spec:
+      containers:
+      - name: satisfactory-server
+        image: wolveix/satisfactory-server:latest
+        ports:
+        - containerPort: 7777
+          protocol: UDP
+        - containerPort: 15000
+          protocol: UDP
+        - containerPort: 15777
+          protocol: UDP
+        volumeMounts:
+          - mountPath: /config
+            name: game-data
+        resources:
+          requests: 
+            memory: 6Gi
+            cpu: 2000m
+          limits:
+            memory: 10Gi
+            cpu: 3000m
+        env:
+        - name: DEBUG
+          value: "false"
+        - name: MAXPLAYERS
+          value: "8"
+        - name: SKIPUPDATE
+          value: "false"
+        - name: STEAMBETA
+          value: "true"
+
+      volumes:
+      - name: game-data
+        persistentVolumeClaim:
+          claimName: satisfactory-claim
+---
+kind: Service
+apiVersion: v1
+metadata:
+  labels:
+    app: satisfactory-server
+  name: satisfactory-server
+spec:
+  ports:
+    - port: 7777
+      targetPort: 7777
+      protocol: UDP
+      name: udp-7777
+    - port: 15000
+      targetPort: 15000
+      protocol: UDP
+      name: udp-15000
+    - port: 15777
+      targetPort: 15777
+      protocol: UDP
+      name: udp-15777
+  externalIPs:
+    - 192.168.1.34
+  selector:
+    app: satisfactory-server
