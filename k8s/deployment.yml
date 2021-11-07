@@ -79,7 +79,7 @@ spec:
             cpu: 2000m
           limits:
             memory: 10Gi
-            cpu: 3000m
+            cpu: 4000m
         env:
         - name: DEBUG
           value: "false"
@@ -119,3 +119,47 @@ spec:
     - 192.168.1.34
   selector:
     app: satisfactory-server
+---
+apiVersion: spv.no/v2beta1
+kind: AzureKeyVaultSecret
+metadata:
+  name: sas-url 
+  # namespace: akv-test
+spec:
+  vault:
+    name: kmsk8ssecrets # name of key vault
+    object:
+      name: SASUrl # name of the akv object
+      type: secret # akv object type
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: satisfactory-backup
+spec:
+  schedule: "0 1 */1 * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: azcopy
+            image: kensykora/azcopy:latest
+            command:
+            - /bin/bash
+            - -c
+            - mkdir -p /backup/$(date "+%F");cp -r $SRC /backup/$(date "+%F");azcopy cp --recursive /backup $DEST
+            volumeMounts:
+            - mountPath: /config
+              name: game-data
+              readOnly: true
+            env:
+            - name: SRC
+              value: /config/saves
+            - name: DEST
+              value: "sas-url@azurekeyvault"
+          restartPolicy: OnFailure
+          volumes:
+          - name: game-data
+            persistentVolumeClaim:
+              claimName: satisfactory-claim
